@@ -2,6 +2,7 @@ package fr.innodev.trd.gpsbasedemo;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Location;
 import android.os.Build;
 import android.os.Handler;
@@ -20,10 +21,11 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.*;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+
+import java.util.ArrayList;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
 
@@ -33,10 +35,14 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private LocationRequest mLocationRequest;
     private LocationCallback mLocationCallback;
     private Log log;
+    Marker lastMarker;
+    Marker oldMarker;
+    private boolean launch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        this.launch = true;
 
         while (!permissionGranted()) ;
 
@@ -75,8 +81,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         };
 
         mLocationRequest = LocationRequest.create();
-        mLocationRequest.setInterval(20000);
-        mLocationRequest.setFastestInterval(20000);
+        mLocationRequest.setInterval(5000);
+        mLocationRequest.setFastestInterval(5000);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
         mFusedLocationClient.requestLocationUpdates(mLocationRequest,
                 mLocationCallback,
@@ -101,18 +107,45 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
     private void updateMapDisplay(Location myLocation) {
-        // Add a marker in Sydney and move the camera
         LatLng curPos = new LatLng(myLocation.getLatitude(), myLocation.getLongitude());
-        mMap.addMarker(new MarkerOptions().position(curPos).title("Position courante"));
-        float zoom = mMap.getMaxZoomLevel();
+
+        // On efface les vieux marqueur
+        if (oldMarker != null) {
+            oldMarker.setVisible(false);
+        }
+
+
+        if (lastMarker != null) {
+            // On change la couleur et le tet du marqueur précédent
+            lastMarker.setTitle("Old Potition");
+            lastMarker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE));
+            mMap.addPolyline(new PolylineOptions()
+                    .add(lastMarker.getPosition(), curPos)
+                    .width(5)
+                    .color(Color.RED));
+
+
+            // On enregistre pour suprimer le dernier marqueu
+            oldMarker = lastMarker;
+        }
+
+        lastMarker = mMap.addMarker(new MarkerOptions().position(curPos).title("Position courante"));
+
+        float zoom;
+        if (this.launch) {
+            zoom = mMap.getMaxZoomLevel() - 3.0f;
+            this.launch = false;
+        } else {
+            zoom = mMap.getCameraPosition().zoom;
+        }
         log.d("INFO", "Zoom Max = " + zoom);
-        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(curPos, zoom - 3.0f));
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(curPos, zoom));
     }
 
     private boolean permissionGranted() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                ) {//Can add more as per requirement
+        ) {//Can add more as per requirement
 
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
