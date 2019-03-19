@@ -2,6 +2,7 @@ package fr.innodev.trd.gpsbasedemo;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.location.Location;
 import android.os.Build;
@@ -12,6 +13,9 @@ import android.os.Bundle;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
@@ -35,14 +39,16 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private LocationRequest mLocationRequest;
     private LocationCallback mLocationCallback;
     private Log log;
-    Marker lastMarker;
-    Marker oldMarker;
+    private Marker lastMarker;
+    private Marker oldMarker;
     private boolean launch;
+    private boolean firtsMarker;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         this.launch = true;
+        this.firtsMarker = true;
 
         while (!permissionGranted()) ;
 
@@ -111,9 +117,13 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
         // On efface les vieux marqueur
         if (oldMarker != null) {
-            oldMarker.setVisible(false);
+            if (!firtsMarker){
+                oldMarker.setVisible(false);
+            }else {
+                oldMarker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_YELLOW));
+                this.firtsMarker=false;
+            }
         }
-
 
         if (lastMarker != null) {
             // On change la couleur et le tet du marqueur précédent
@@ -123,6 +133,16 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     .add(lastMarker.getPosition(), curPos)
                     .width(5)
                     .color(Color.RED));
+
+            // Calcule de la distance entre les deux dernier point
+            float[] distance1 = new float[1];
+            Location.distanceBetween(curPos.latitude,
+                    curPos.longitude,
+                    lastMarker.getPosition().latitude,
+                    lastMarker.getPosition().longitude,
+                    distance1);
+
+            log.d("INFO", "distance : "+distance1[0]);
 
 
             // On enregistre pour suprimer le dernier marqueu
@@ -138,7 +158,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         } else {
             zoom = mMap.getCameraPosition().zoom;
         }
-        log.d("INFO", "Zoom Max = " + zoom);
+        log.d("INFO", "Zoom = " + zoom);
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(curPos, zoom));
     }
 
