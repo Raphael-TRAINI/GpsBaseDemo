@@ -1,9 +1,14 @@
 package fr.innodev.trd.gpsbasedemo;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.os.Build;
 import android.os.Handler;
@@ -16,6 +21,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
@@ -39,10 +45,18 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private LocationRequest mLocationRequest;
     private LocationCallback mLocationCallback;
     private Log log;
+    private Marker piedMarker;
+    private Marker last1Marker;
     private Marker lastMarker;
     private Marker oldMarker;
     private boolean launch;
     private boolean firtsMarker;
+    public double angle;
+    public double distFromLastPoint;
+
+    private SensorManager sensorManager;
+    private Sensor stepCounterSensor;
+    private float lastNumberStep;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,13 +101,18 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         };
 
         mLocationRequest = LocationRequest.create();
-        mLocationRequest.setInterval(5000);
+        mLocationRequest.setInterval(30000);
         mLocationRequest.setFastestInterval(5000);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
         mFusedLocationClient.requestLocationUpdates(mLocationRequest,
                 mLocationCallback,
                 null /* Looper */);
 
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+            stepCounterSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+            sensorManager.registerListener(mSensorEventListener, stepCounterSensor, 1000000);
+        }
     }
 
 
@@ -110,18 +129,24 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
         mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+        piedMarker = mMap.addMarker(new MarkerOptions()
+                .position(new LatLng(10, 10))
+                .title("Calcul au pied")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
     }
 
     private void updateMapDisplay(Location myLocation) {
         LatLng curPos = new LatLng(myLocation.getLatitude(), myLocation.getLongitude());
-
+        if (lastMarker != null) {
+            last1Marker = lastMarker;
+        }
         // On efface les vieux marqueur
         if (oldMarker != null) {
-            if (!firtsMarker){
+            if (!firtsMarker) {
                 oldMarker.setVisible(false);
-            }else {
+            } else {
                 oldMarker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_YELLOW));
-                this.firtsMarker=false;
+                this.firtsMarker = false;
             }
         }
 
@@ -142,25 +167,66 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     lastMarker.getPosition().longitude,
                     distance1);
 
-            log.d("INFO", "distance : "+distance1[0]);
-
+            log.d("INFO", "distance : " + distance1[0]);
+            ((TextView) findViewById(R.id.textView1)).setText("Distance du gps : " + distance1[0] + " m");
 
             // On enregistre pour suprimer le dernier marqueu
             oldMarker = lastMarker;
+            distFromLastPoint = 0;
         }
 
         lastMarker = mMap.addMarker(new MarkerOptions().position(curPos).title("Position courante"));
 
         float zoom;
         if (this.launch) {
-            zoom = mMap.getMaxZoomLevel() - 3.0f;
+            zoom = mMap.getMaxZoomLevel() - 20.0f;
             this.launch = false;
         } else {
             zoom = mMap.getCameraPosition().zoom;
         }
         log.d("INFO", "Zoom = " + zoom);
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(curPos, zoom));
+
+        // Mise a jours de l'angle
+        if (last1Marker != null && lastMarker != null) {
+            angle = GetAngleOfLineBetweenTwoPoints(lastMarker, last1Marker);
+            DisplayDirection(angle);
+        }
     }
+
+
+    final SensorEventListener mSensorEventListener = new SensorEventListener() {
+
+        @Override
+        public void onSensorChanged(SensorEvent sensorEvent) {
+            if (sensorEvent.sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
+                float nbStep = sensorEvent.values[0];
+                if (lastNumberStep == 0.0f) {
+                    lastNumberStep = nbStep;
+                }
+                float nbNewStep = nbStep - lastNumberStep;
+                Log.d("INFO", "Step " + nbStep);
+                Log.d("INFO", "New Step " + nbNewStep);
+                Log.d("INFO", "Distance a pied : " + nbNewStep * 0.70);
+                distFromLastPoint += nbNewStep * 0.70;
+                ((TextView) findViewById(R.id.textView2)).setText("Distance a pied : " + distFromLastPoint + " m");
+                lastNumberStep = nbStep;
+                // distance metre to degre
+                double distDegr = (distFromLastPoint * 0.00001) / 1.1132;
+
+                if (lastMarker != null && angle != 0) {
+                    double longitude = lastMarker.getPosition().longitude + (distDegr * (Math.cos(angle)));
+                    double latitude = lastMarker.getPosition().latitude + (distDegr * (Math.sin(angle)));
+                    piedMarker.setPosition(new LatLng(latitude, longitude));
+                }
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int i) {
+
+        }
+    };
 
     private boolean permissionGranted() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
@@ -173,5 +239,27 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         }
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Determines the angle of a straight line drawn between point one and two. The number returned, which is a double in degrees, tells us how much we have to rotate a horizontal line clockwise for it to match the line between the two points.
+     * If you prefer to deal with angles using radians instead of degrees, just change the last line to: "return Math.atan2(yDiff, xDiff);"
+     */
+    public static double GetAngleOfLineBetweenTwoPoints(Marker p1, Marker p2) {
+        double xDiff = p2.getPosition().latitude - p1.getPosition().latitude;
+        double yDiff = p2.getPosition().longitude - p1.getPosition().longitude;
+        return Math.atan2(yDiff, xDiff);
+    }
+
+    public static boolean isBetween(double x, double lower, double upper) {
+        return lower <= x && x <= upper;
+    }
+
+    public void DisplayDirection(Double angle){
+        ((TextView) findViewById(R.id.textView3)).setText("Angle clac : " + angle + " rad");
+        if (isBetween(angle, 1, 5)) {
+
+        }
+        ((TextView) findViewById(R.id.textView4)).setText("Angle clac : " + angle + " rad");
     }
 }
